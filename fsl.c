@@ -212,8 +212,8 @@ int entry(int argc, string argv[]) {
         "-o",
         OUTPUT,
 		COPY,
-        "/usr/lib/libbase.a",
         "/usr/lib/loader.o",
+        "/usr/lib/libbase.a",
         0
     };
 
