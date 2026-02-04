@@ -1,10 +1,10 @@
-#include "../base/headers/fsl.h"
+#include "../Stdlib/headers/fsl.h"
 
 const string HELP_BANNER = "    Argument      Description\n"
 						   "______________________________________\n"
-    					   "--output      output binary\n"
-    					   "-c            object file\n"
-    					   "-co           Combine object file(s)";
+    					   "    --output      output binary\n"
+    					   "    -c            object file\n"
+    					   "    -co           Combine object file(s)";
 
 
 #define GCC_FLAGS 8
@@ -27,7 +27,7 @@ string LD_COMPILE_FLAGS[LD_FLAGS] = {
     NULL
 };
 
-const string CLIBP_LIB = "/usr/lib/libbase.a";
+const string CLIBP_LIB = "/usr/lib/libfsl.a";
 const string CLIBP_LOADER = "/usr/lib/loader.o";
 
 int create_gcc_command(sArr command)
@@ -213,11 +213,11 @@ int entry(int argc, string argv[]) {
         OUTPUT,
 		COPY,
         "/usr/lib/loader.o",
-        "/usr/lib/libbase.a",
+        "/usr/lib/libfsl.a",
         0
     };
 
-	__sprintf(BUFFER, "[ + ] Linking '%s' with /usr/lib/libclibp.a", COPY);
+	__sprintf(BUFFER, "[ + ] Linking '%s' with /usr/lib/libfsl.a", COPY);
 	println(BUFFER);
 	__sprintf(BUFFER, "[ + ] Producing '%s'....", OUTPUT);
 	println(BUFFER);
