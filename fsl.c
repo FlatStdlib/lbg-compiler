@@ -83,6 +83,7 @@ int entry(int argc, string argv[]) {
 		return 1;
 	}
 
+	// toggle_debug_mode();
 	int idx;
 	char BUFFER[1024];
 	if((idx = array_contains_str((array)argv, "--o")) > -1) {
@@ -102,11 +103,11 @@ int entry(int argc, string argv[]) {
 		/*
 			Debug GCC Command
 		*/
-		// print("Command: ");
-		// for(int n = 0; n < pos; n++)
-		// 	print("'"), print(gcc_cmd[n]), print("' ");
+		print("Command: ");
+		for(int n = 0; n < pos; n++)
+			print("'"), print(gcc_cmd[n]), print("' ");
 		
-		// print("\n");
+		print("\n");
 
 		println("[ + ] Compiling to object file(s)....");
 		__execute(gcc_cmd[0], gcc_cmd);
@@ -161,10 +162,14 @@ int entry(int argc, string argv[]) {
 			if(pos > -1)
 			{
 				printi(pos);
-				string sub = get_sub_str(argv[i], pos + 1, str_len(argv[i]) - 1);
+				int sz = str_len(argv[i]) - 1;
+				char sub[sz];
+				if(get_sub_str(argv[i], pos + 1, str_len(argv[i]) - 1, sub) == -1)
+					println("Failed to get substring!");
+
 				println(sub);
 				pfree(argv[i], 1);
-				argv[i] = sub;
+				argv[i] = to_heap(sub, sz);
 			}
 
 			int len = str_len(argv[i]);
