@@ -1,56 +1,63 @@
-#include "../Stdlib/headers/fsl.h"
+/* 
+    fsl-gcc chain compiler v1.5 (Production Rewrite)
 
-const string HELP_BANNER = "    Argument      Description\n"
-						   "______________________________________\n"
-    					   "    --output      output binary\n"
-    					   "    -c            object file\n"
-    					   "    -co           Combine object file(s)";
+    Original repo; https://github.com/FlatStdlib/fsl
+*/
+#include <fsl.h>
 
+extern i32 __ARGC__;
+extern string __ARGV__[50];
 
-#define GCC_FLAGS 8
-string GCC_COMPILE_FLAGS[GCC_FLAGS] = {
-	"/usr/bin/gcc",
-	"-ffunction-sections",
-	"-fdata-sections",
-	"-Wl,--gc-sections",
-	"-nostdlib",
-	"-ffreestanding",
-	"-c",
-	NULL
+string FSL_STDLIBS[] = {
+	"/usr/lib/libfsl.a",
+	"/usr/lib/libfsl_x86.a"
+};
+
+#if defined(__linux__)
+    #define CC "gcc"
+#else
+    #error "Unsupport Platform"
+#endif
+
+const string COMPILER_FLAGS[] = {
+    "/usr/bin/gcc",
+    "-ffunction-sections",
+    "-fdata-sections",
+    "-Wl,--gc-sections",
+    "-nostdlib",
+    "-ffreestanding",
+    "-c",
+    NULL
 };
 
 #define LD_FLAGS 4
-string LD_COMPILE_FLAGS[LD_FLAGS] = {
+string LD_LINKER_FLAGS[LD_FLAGS] = {
     "/usr/bin/ld",
 	"--no-relax",
     "-o",
     NULL
 };
 
-const string FSL_LIB = "/usr/lib/libfsl.a";
-const string FSL_LOADER = "/usr/lib/loader.o";
+const string FILES[] = {
+    "src/c/_syscall.c",
+    "src/c/allocator.c",
+    "src/c/any.c",
+    "src/c/internal.c",
+    "src/c/memory.c",
+    "src/c/start_up.c",
+    "src/c/stdlib/int.c",
+    "src/c/stdlib/char.c",
+    "src/c/stdlib/string.c",
+    "src/c/stdlib/array.c",
+    "src/c/stdlib/map.c",
+    "src/c/stdlib/file.c",
+    "src/c/stdlib/socket.c",
+    "src/c/stdlib/thread.c",
+    // "src/c/stdlib/heap_string.c",
+    NULL
+};
 
-int create_gcc_command(sArr command)
-{
-	int i = 0;
-	for(i = 0; i < GCC_FLAGS - 1; i++)
-		if(GCC_COMPILE_FLAGS[i] != NULL)
-		command[i] = str_dup(GCC_COMPILE_FLAGS[i]);
-
-	return i;
-}
-
-int create_ld_command(sArr command)
-{
-	int i = 0;
-	for(i = 0; i < LD_FLAGS - 1; i++)
-		if(LD_COMPILE_FLAGS[i] != NULL)
-			command[i] = str_dup(LD_COMPILE_FLAGS[i]);
-
-	return i;
-}
-
-void __execute(char *app, char **args)
+static void __execute(char *app, char **args)
 {
 	if(!app || !args)
 		return;
@@ -67,173 +74,137 @@ void __execute(char *app, char **args)
 	}
 }
 
-/*
-	Since this is a one operation thing. Heap gets free'd on exit
-*/
-int entry(int argc, string argv[]) {
-	if(argc == 2 && find_string(argv[1], "--help") > -1)
-	{
-		println(HELP_BANNER);
-		return 0;
-	}
+bool validate_c_file(string q, int sz)
+{ return (q[sz - 2] == '.' && q[sz - 1] == 'c'); }
 
-	if(argc < 3)
-	{
-		println("[ x ] \x1b[31mError\x1b[39m, Invalid arguments provided\nUsage: fsl <c_file> <opt> <output>\nUse --help for help or more arguments");
-		return 1;
-	}
+char BUILD_COMMAND[2048];
+char LINK_COMMAND[2048];
+public int entry(int argc, string argv[])
+{
+    if(argc < 3)
+    {
+        _printf("[ x ] Error, Invalid arguments provided\nUsage: %s <input_file> <opt> <output_file>\n", argv[0]);
+        return 1;
+    }
 
-	// toggle_debug_mode();
-	int idx;
-	char BUFFER[1024];
-	if((idx = array_contains_str((array)argv, "--o")) > -1) {
-		string output_file = argv[idx + 1];
+    int DEBUG = 0;
+    if(array_contains_str((array)argv, "--debug") > -1)
+        DEBUG = 1;
 
-		sArr gcc_cmd = allocate(sizeof(char *), argc + 3);
-		int pos = create_gcc_command(gcc_cmd);
+    memzero(BUILD_COMMAND, 2048);
+    
+    /* Add Default Command */
+    str_join(BUILD_COMMAND, (array)COMPILER_FLAGS, ' ');
 
-		/* Add the remaining files or command */
-		for(int c = idx + 2; c < argc; c++) {
-			if(str_cmp(argv[c], "--cflags")) continue;
-			gcc_cmd[pos++] = str_dup(argv[c]);
-		}
+    string executable[50];
+    memzero(executable, 50);
 
-		gcc_cmd[pos] = NULL;
+    char *C_FILES[1024];
+    int _c_files = 0;
 
-		/*
-			Debug GCC Command
-		*/
-		print("Command: ");
-		for(int n = 0; n < pos; n++)
-			print("'"), print(gcc_cmd[n]), print("' ");
-		
-		print("\n");
+    /* Iterate Command Arguments */
+    int output_pos = 0;
+    int cflags = 0, exec = 0;
+    for(int i = 0; i < argc; i++)
+    {
+        int sz = str_len(argv[i]);
+        if(validate_c_file(argv[i], sz))
+        {
+            str_append(BUILD_COMMAND, argv[i]), str_append(BUILD_COMMAND, " ");
+            C_FILES[_c_files] = str_dup(argv[i]);
+            C_FILES[_c_files][sz - 1] = 'o';
+            _c_files++;
+        }
 
-		println("[ + ] Compiling to object file(s)....");
-		__execute(gcc_cmd[0], gcc_cmd);
-		sArr ld_cmd = allocate(sizeof(char *), argc + 2);
-		int ld_pos = create_ld_command(ld_cmd);
-		for(int i = idx + 1; i < argc; i++)
-		{
-			if(str_cmp(argv[i], "--cflags")) break;
-			// print("BUFFER LEN: "), _printi(len), print(" -> "), println(argv[i]);
-			int cnt = count_char(argv[i], '/');
-			int pos = find_char_at(argv[i], '/', cnt);
-			if(pos > -1 && find_string(argv[i], "/") > -1)
-			{
-				argv[i] += pos + 1;
-			}
-			
-			int len = str_len(argv[i]);
-			if(argv[i][len - 1] == 'c') {
-				argv[i][len - 1] = 'o';
-			}
+        if(str_cmp(argv[i], "-o"))
+            exec = i + 1, output_pos = i + 1;
 
-			ld_cmd[ld_pos++] = str_dup(argv[i]);
-		}
+        if(str_cmp(argv[i], "--cflags"))
+            cflags = i + 1;
+    }
 
-		ld_cmd[ld_pos++] = str_dup(FSL_LIB);
-		ld_cmd[ld_pos++] = str_dup(FSL_LOADER);
-		ld_cmd[ld_pos] = NULL;
+    /* Add C Flags Upon --cflags */
+    if(cflags > 0)
+    {
+        array p = (array)argv + cflags;
+        str_join(BUILD_COMMAND, p, ' ');
+    }
 
-		/*
-			Debug Linker Command
-		*/
-		// print("LINKER: ");
-		// for(int n = 0; n < ld_pos; n++)
-		// 	print(ld_cmd[n]), print(" ");
+    BUILD_COMMAND[str_len(BUILD_COMMAND) - 1] = '\0';
 
-		// print("\n");
+    /*
+        GCC Object Compilation Stage
+    */
 
-		/* Create binary with object files */
-		if(array_contains_str((array)argv, "-c") > -1)
-			return 0;
+    /* Compilation Arguments */
+    int cmd_argc = 0;
+    sArr cmd_args = split_string(BUILD_COMMAND, ' ', &cmd_argc);
 
-		__sprintf(BUFFER, "[ + ] Linking with /usr/lib/libfsl.a and Producing '%s'....", output_file);
-		println(BUFFER);
-		__execute(ld_cmd[0], ld_cmd);
+    if(array_contains_str((array)argv, "-c") > -1)
+    {
+        println("[ + ] Compiling to object file(s)....");
+        __execute(cmd_args[0], cmd_args);
+        return 0;
+    }
+    
+    __execute(cmd_args[0], cmd_args);
 
-		/* Remove object files */
-		sArr rm = allocate(sizeof(char *), argc + 2);
-		rm[0] = str_dup("/usr/bin/rm");
-		for(int i = idx + 1, c = 1; i < argc; i++) {
-			if(str_cmp(argv[i], "--cflags")) break;
-			int pos = find_char(argv[i], '/');
-			if(pos > -1)
-			{
-				printi(pos);
-				int sz = str_len(argv[i]) - 1;
-				char sub[sz];
-				if(get_sub_str(argv[i], pos + 1, str_len(argv[i]) - 1, sub) == -1)
-					println("Failed to get substring!");
+    /* Debug GCC Command */
+    if(DEBUG) {
+        _printf("\x1b[32mGCC:\x1b[0m '%s'\n", BUILD_COMMAND);
+        for(int i = 0; i < cmd_argc; i++)
+        {
+            if(!cmd_args[i]) break;
+            _printf("[%d]: %s\r\n", (ptr)&i, cmd_args[i]);
+        }
+    }
 
-				println(sub);
-				pfree(argv[i], 1);
-				argv[i] = to_heap(sub, sz);
-			}
+    /* Exit Upon Object File Flag Request '-c' */
+    if(array_contains_str((array)argv, "-c") > -1)
+    {
+        println("[ + ] Object File Created");
+        return 0;
+    }
 
-			int len = str_len(argv[i]);
-			if(argv[i][len - 1] == 'o') {
-				rm[c++] = str_dup(argv[i]);
-				rm[c] = NULL;
-			}
-		}
+    /*
+        LINKER STAGE 
+    */
 
-    	__execute(rm[0], rm);
-		return 0;
-	}
+    str_join(LINK_COMMAND, (array)LD_LINKER_FLAGS, ' ');
 
-	string C_FILE = argv[1];
-	string OPT = argv[2];
-	string OUTPUT = argv[3];
+    str_append(LINK_COMMAND, argv[output_pos]);
+    str_append(LINK_COMMAND, " ");
 
-	string COPY = str_dup(C_FILE);
-	int len = str_len(COPY);
-	COPY[len - 1] = 'o';
+    for(int i = 0; i < _c_files; i++) {
+        str_append(LINK_COMMAND, C_FILES[i]);
+        str_append(LINK_COMMAND, " ");
+    }
 
-	__sprintf(BUFFER, "[ + ] Compiling '%s' to '%s'", C_FILE, COPY);
-	println(BUFFER);
-	char *GCC_CMD[10] = {
-		"/usr/bin/gcc",
-		"-nostdlib",
-		"-ffunction-sections",
-		"-Wl,--gc-sections",
-		"-ffreestanding",
-		"-c",
-		C_FILE,
-		"-o",
-		COPY,
-		0
-	};
-    __execute(GCC_CMD[0], GCC_CMD);
+    str_append(LINK_COMMAND, "/usr/lib/libfsl.a ");
+    str_append(LINK_COMMAND, "/usr/lib/loader.o");
 
-	if(array_contains_str((array)argv, "-c") > -1)
-		return 0;
+    sArr ld_args = split_string(LINK_COMMAND, ' ', &cmd_argc);
+    __execute(ld_args[0], ld_args);
 
-	char *LINKER_CMD[9] = {
-        "/usr/bin/ld",
-		"--no-relax",
-		"--gc-sections",
-        "-o",
-        OUTPUT,
-		COPY,
-        "/usr/lib/loader.o",
-        "/usr/lib/libfsl.a",
-        0
-    };
+    /* Debug Linker Command & Remove Object Files */
+    string rm[1024] = {0}; int len = 0;
+    if(DEBUG) _printf("\x1b[32mLinker:\x1b[0m '%s'\n", LINK_COMMAND);
+    rm[len++] = str_dup("/usr/bin/rm");
+    rm[len++] = str_dup("-rf");
+    for(int i = 0; i < cmd_argc; i++)
+    {
+        if(!ld_args[i]) break;
+        if(DEBUG) {
+            _printf("[%d]: %s\r\n", (ptr)&i, ld_args[i]);
+        }
 
-	__sprintf(BUFFER, "[ + ] Linking '%s' with /usr/lib/libfsl.a", COPY);
-	println(BUFFER);
-	__sprintf(BUFFER, "[ + ] Producing '%s'....", OUTPUT);
-	println(BUFFER);
-    __execute(LINKER_CMD[0], LINKER_CMD);
-	
-	/* Remove object file */
-	char *rm[3] = {"/usr/bin/rm", COPY, 0};
+        if(str_endswith(ld_args[i], ".o"))
+            rm[len++] = str_dup(ld_args[i]);
+
+        rm[len] = NULL;
+    }
+
     __execute(rm[0], rm);
-    return 0;
-}
 
-int main() {
-	_printf("Hi from GCC with clib+\n", 0);
+    return 0;
 }
